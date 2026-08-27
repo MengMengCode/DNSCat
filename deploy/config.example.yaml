@@ -1,0 +1,73 @@
+# DnsCat 配置模板
+#
+# 复制为 config.yaml 后按需修改。二进制安装（deploy/install.sh）会自动生成
+# /etc/dnscat/config.yaml 并填入随机密钥，通常无需手改。
+#
+# 优先级：环境变量 > 配置文件 > 内置默认值。
+# 支持的环境变量覆盖：
+#   DNSCAT_HTTP_PORT       Web/API 端口
+#   DNSCAT_DB_DSN          数据库连接串（含 @tcp( 时自动切到 mysql 驱动）
+#   DNSCAT_REDIS_ADDR      Redis 地址（设置即启用 Redis）
+#   DNSCAT_JWT_SECRET      JWT 签名密钥
+#   DNSCAT_CLUSTER_TOKEN   集群令牌
+
+server:
+  http_port: 8080
+  host: "0.0.0.0"
+  mode: "release"
+
+dns:
+  udp_port: 53
+  tcp_port: 53
+  tls_port: 853
+  enable_tls: false
+  tls_cert_file: ""
+  tls_key_file: ""
+  enable_doh: true
+  # 新建域名默认使用的权威 NS 主机名。留空则不预置，
+  # 请在控制台「权威 NS 服务器」页添加后再建域名。
+  # 例：
+  #   default_ns:
+  #     - "ns1.example.com."
+  #     - "ns2.example.com."
+  default_ns: []
+  default_ttl: 300
+  rate_limit: 1000 # 每客户端 IP 每秒查询上限
+
+database:
+  # sqlite：单机部署最省事，无需外部数据库
+  # mysql ：多实例共享同一份数据时使用
+  driver: "sqlite"
+  dsn: "data/dnscat.db"
+  # MySQL 示例（配合 docker-compose.master.yml 时由环境变量注入，无需在此填写）：
+  # driver: "mysql"
+  # dsn: "root:<你的口令>@tcp(mysql:3306)/dnscat?charset=utf8mb4&parseTime=True&loc=Local"
+
+redis:
+  # 仅用于遥测统计快照与跨实例缓存；单机 sqlite 部署可关闭
+  enabled: false
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+
+dnssec:
+  auto_sign: true
+  algorithm: "ECDSAP256SHA256"
+
+cluster:
+  node_id: "master-node-01"
+  node_name: "Master Primary"
+  is_master: true
+  # 边缘节点拉取权威区域快照的凭据，主控与所有被控节点必须一致。
+  # 留空则拒绝节点接入；请填入足够长的随机串，例如 `openssl rand -hex 32` 的输出。
+  secret_token: ""
+  sync_interval: 10
+
+prober:
+  enabled: true
+  check_interval: 15
+  timeout_sec: 5
+
+# JWT 签名密钥。留空则每次启动随机生成，重启后登录会话会失效；
+# 生产环境请固定为随机长串，例如 `openssl rand -hex 32` 的输出。
+jwt_secret: ""

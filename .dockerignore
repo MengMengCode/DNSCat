@@ -1,0 +1,40 @@
+# 收敛 Docker 构建上下文。
+# 镜像改为多阶段源码构建后，上下文需要 go 源码 + web 源码；
+# 而依赖目录、构建产物、密钥与本地草稿一律排除（既缩小上下文，也避免敏感文件被送进构建）。
+
+# 版本库与忽略规则
+.git
+.gitignore
+
+# 依赖目录：容器内自行 npm ci / go mod download
+web/node_modules
+node_modules
+
+# 构建产物：web/dist 由 web-builder 阶段生成，bin/ 由 go-builder 阶段生成。
+# 尤其 bin/ 有近 200MB 交叉编译二进制，放进上下文会显著拖慢每次构建。
+web/dist
+bin
+
+# 部署过程产物、备份与密钥
+.deploy
+.deploy-tools
+.deploy-backups
+.deploy-secrets.env
+deploy/.env
+deploy/config.yaml
+*.tar.gz
+*.zip
+
+# 运行期数据与日志
+data
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# 本地工具与草稿
+__pycache__
+.claude
+.vscode
+.idea
+_*

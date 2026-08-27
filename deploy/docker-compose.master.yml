@@ -1,0 +1,93 @@
+# DnsCat 主控（master）部署：Web 控制台 + REST/DoH API + 权威 DNS + MySQL + Redis
+#
+# 主控自身监听 :53 对外提供权威解析，单机即可完整运行；
+# 需要多地 Anycast 时再按 docker-compose.node.yml 在其他机器上加被控节点。
+#
+# ── 用法 ────────────────────────────────────────────────────────────────
+#   1) 放开防火墙 UDP/TCP 53 与 TCP 8080（如需 DoT 再放 853）。
+#   2) 在本目录准备 .env（deploy/install.sh --mode docker 会自动生成）：
+#        MYSQL_ROOT_PASSWORD=<随机长串>
+#        JWT_SECRET=<随机长串，openssl rand -hex 32>
+#        CLUSTER_TOKEN=<随机长串，openssl rand -hex 32>
+#   3) docker compose -f deploy/docker-compose.master.yml up -d --build
+#   4) 首次启动的管理员口令是随机生成的，从日志里取：
+#        docker compose -f deploy/docker-compose.master.yml logs server | grep -A4 初始随机口令
+#
+# ── 安全 ────────────────────────────────────────────────────────────────
+#   · MySQL 与 Redis 只经容器内网通信（expose 而非 ports），不对宿主与公网映射。
+#   · 三个密钥没有默认值：未设置时 compose 直接报错退出，不会静默使用弱口令。
+#   · 8080 是 HTTP 明文，长期使用请在前面加 TLS 反代，并用安全组限制来源 IP。
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: dnscat-mysql
+    restart: always
+    # 1 vCPU / 2GB 级别小机的保守参数：压缩缓冲池、关闭 performance_schema
+    command:
+      - --innodb-buffer-pool-size=128M
+      - --performance-schema=OFF
+      - --max-connections=100
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 deploy/.env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: dnscat
+    # expose 而非 ports：仅容器内网可达
+    expose:
+      - "3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - dnscat_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: dnscat-redis
+    restart: always
+    # appendonly：遥测统计快照落 Redis，容器/进程重启不丢
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - dnscat_net
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    container_name: dnscat-server
+    restart: always
+    cap_add:
+      # 源站 ICMP 探测需要 raw socket
+      - NET_RAW
+    ports:
+      - "8080:8080"   # Web 控制台 + REST / DoH API
+      - "53:53/udp"   # 权威 DNS UDP
+      - "53:53/tcp"   # 权威 DNS TCP
+      - "853:853/tcp" # DoT，可选
+    environment:
+      - DNSCAT_DB_DSN=root:${MYSQL_ROOT_PASSWORD:?请在 deploy/.env 中设置 MYSQL_ROOT_PASSWORD}@tcp(mysql:3306)/dnscat?charset=utf8mb4&parseTime=True&loc=Local
+      - DNSCAT_REDIS_ADDR=redis:6379
+      - DNSCAT_JWT_SECRET=${JWT_SECRET:?请在 deploy/.env 中设置 JWT_SECRET（openssl rand -hex 32）}
+      - DNSCAT_CLUSTER_TOKEN=${CLUSTER_TOKEN:?请在 deploy/.env 中设置 CLUSTER_TOKEN（openssl rand -hex 32）}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - dnscat_net
+
+networks:
+  dnscat_net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:

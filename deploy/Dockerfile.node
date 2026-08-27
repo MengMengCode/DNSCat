@@ -1,0 +1,29 @@
+# DnsCat 被控（边缘）节点镜像：只跑 node 子程序，回连主控同步权威区域。
+#
+# 不含 Web 控制台、数据库与主控逻辑——被控机器上只需要这一个进程。
+# 多阶段构建，从源码一次构建完成。
+#
+# 用法（在仓库根目录）：
+#   docker compose -f deploy/docker-compose.node.yml up -d --build
+
+# ---------- 1) Go 构建 ----------
+FROM golang:1.25-alpine AS go-builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "-s -w" -o /out/node ./cmd/node
+
+# ---------- 2) 运行期 ----------
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY --from=go-builder /out/node /app/node
+
+EXPOSE 53/udp 53/tcp
+
+ENTRYPOINT ["/app/node"]

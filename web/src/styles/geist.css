@@ -1,0 +1,160 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+:root {
+  /* Geist Light Tokens */
+  --bg-100: #ffffff;
+  --bg-200: #fafafa;
+  --text-primary: #171717;
+  --text-secondary: #666666;
+  --text-tertiary: #8f8f8f;
+
+  --border-subtle: #eaeaea;
+  --border-muted: #dcdcdc;
+  --border-hover: #a8a8a8;
+
+  --card-bg: #ffffff;
+  --card-border: #eaeaea;
+  --card-hover-bg: #fafafa;
+
+  --accent-blue: #006bff;
+  --accent-blue-hover: #0059ec;
+  --accent-blue-bg: #f0f7ff;
+  --accent-blue-border: #cae7ff;
+
+  --accent-green: #28a948;
+  --accent-green-bg: #ecfdec;
+  --accent-green-border: #b9f5bc;
+
+  --accent-red: #ea001d;
+  --accent-red-bg: #ffeeef;
+  --accent-red-border: #ffd7d6;
+
+  --accent-amber: #ffae00;
+  --accent-amber-bg: #fff6de;
+  --accent-amber-border: #ffdc73;
+
+  --gray-50: #fbfbfb;
+  --gray-100: #f2f2f2;
+  --gray-200: #ebebeb;
+  --gray-300: #e6e6e6;
+  --gray-400: #eaeaea;
+  --gray-500: #c9c9c9;
+  --gray-600: #a8a8a8;
+  --gray-700: #8f8f8f;
+  --gray-800: #7d7d7d;
+  --gray-900: #4d4d4d;
+  --gray-1000: #171717;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 2px 2px rgba(0, 0, 0, 0.04);
+  --shadow-popover: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-modal: 0 16px 32px rgba(0, 0, 0, 0.12);
+}
+
+.dark {
+  /* Geist Dark Tokens */
+  --bg-100: #000000;
+  --bg-200: #0a0a0a;
+  --text-primary: #ededed;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #666666;
+
+  --border-subtle: #242424;
+  --border-muted: #333333;
+  --border-hover: #454545;
+
+  --card-bg: #0a0a0a;
+  --card-border: #242424;
+  --card-hover-bg: #121212;
+
+  --accent-blue: #006efe;
+  --accent-blue-hover: #47a8ff;
+  --accent-blue-bg: #06193a;
+  --accent-blue-border: #003674;
+
+  --accent-green: #00ac3a;
+  --accent-green-bg: #002608;
+  --accent-green-border: #004615;
+
+  --accent-red: #f13242;
+  --accent-red-bg: #330a11;
+  --accent-red-border: #6f101b;
+
+  --accent-amber: #ffae00;
+  --accent-amber-bg: #2a1700;
+  --accent-amber-border: #5b3000;
+
+  --gray-50: #0d0d0d;
+  --gray-100: #1a1a1a;
+  --gray-200: #1f1f1f;
+  --gray-300: #292929;
+  --gray-400: #2e2e2e;
+  --gray-500: #454545;
+  --gray-600: #878787;
+  --gray-700: #8f8f8f;
+  --gray-800: #7d7d7d;
+  --gray-900: #a0a0a0;
+  --gray-1000: #ededed;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.7);
+  --shadow-modal: 0 20px 40px rgba(0, 0, 0, 0.9);
+}
+
+body {
+  /* 全局统一使用 Geist Mono 等宽字体 */
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background-color: var(--bg-100);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+code, pre, .font-mono {
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--gray-400);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-500);
+}
+
+/* Glassmorphism helpers */
+.glass-panel {
+  background: rgba(10, 10, 10, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Geist Card */
+.geist-card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.geist-card:hover {
+  border-color: var(--border-hover);
+}
+
+/* Transitions */
+.transition-fast {
+  transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}

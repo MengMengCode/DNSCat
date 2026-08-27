@@ -1,0 +1,56 @@
+# DnsCat 主控镜像：Web 控制台 + REST/DoH API + 权威 DNS
+#
+# 多阶段构建，从源码一次构建完成，无需事先交叉编译：
+#   1) web-builder  —— 构建前端静态资源
+#   2) go-builder   —— 编译 server 与 dnscat CLI
+#   3) runtime      —— 精简 alpine，只装运行期所需
+#
+# 用法（在仓库根目录）：
+#   docker compose -f deploy/docker-compose.master.yml up -d --build
+
+# ---------- 1) 前端构建 ----------
+FROM node:20-alpine AS web-builder
+WORKDIR /src/web
+# 先只拷依赖清单，命中缓存后依赖层不必随源码改动重建
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
+
+# ---------- 2) Go 构建 ----------
+FROM golang:1.25-alpine AS go-builder
+WORKDIR /src
+# 同理：先拷 go.mod/go.sum 单独下载依赖
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+# CGO_ENABLED=0 生成静态二进制，才能在 alpine（musl）里直接运行；
+# TARGETARCH 由 buildx 注入，未设置时用构建机架构，天然同时支持 amd64/arm64。
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "-s -w" -o /out/server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "-s -w" -o /out/dnscat ./cmd/cli
+
+# ---------- 3) 运行期 ----------
+FROM alpine:3.20
+# ca-certificates: ACME 签发证书需要校验对端；tzdata: 日志与统计的本地时区
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+
+COPY --from=go-builder /out/server /app/server
+COPY --from=go-builder /out/dnscat /usr/local/bin/dnscat
+COPY --from=web-builder /src/web/dist /app/web/dist
+COPY deploy/config.example.yaml /app/config.yaml
+
+# sqlite 模式的数据目录；MySQL 模式下不使用
+RUN mkdir -p /app/data
+
+EXPOSE 8080 53/udp 53/tcp 853/tcp
+
+# 说明：这里不切换到非 root 用户。绑定 53 这类特权端口需要 CAP_NET_BIND_SERVICE，
+# 源站 ICMP 探测还需要 CAP_NET_RAW；由 compose 的 cap_add 授予最小能力集，
+# 在镜像里降权反而会让这两项功能静默失效。
+ENTRYPOINT ["/app/server", "--config", "/app/config.yaml"]
