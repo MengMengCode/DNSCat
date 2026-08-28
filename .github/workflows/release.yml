@@ -1,0 +1,140 @@
+name: Release
+
+# 打 tag 时构建多架构二进制并上传到 Release；
+# 也支持手动触发，便于在不发版的情况下产出一批可下载的产物。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要上传产物的已有 tag（留空则只构建并作为 artifact 保留）'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build linux/${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            goarch: amd64
+            goarm: ''
+          - arch: '386'
+            goarch: '386'
+            goarm: ''
+          - arch: arm64
+            goarch: arm64
+            goarm: ''
+          - arch: armv7
+            goarch: arm
+            goarm: '7'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # 前端产物与目标架构无关，但每个 matrix 作业都在独立 runner 上，
+      # 所以各自构建一次。构建耗时约 1 分钟，不值得为此拆作业加传输开销。
+      - name: Build web console
+        run: |
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build
+          test -f dist/index.html
+
+      # server 用 -tags embedui 把控制台打进二进制：
+      # systemd 的 WorkingDirectory 指向数据目录，靠相对路径读 web/dist 是找不到的。
+      - name: Stage assets for embedding
+        run: |
+          rm -rf internal/webui/dist
+          cp -r web/dist internal/webui/dist
+          test -f internal/webui/dist/index.html
+
+      - name: Build binaries
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        run: |
+          set -eux
+          mkdir -p dist
+          A='${{ matrix.arch }}'
+          go build -tags embedui -trimpath -ldflags "-s -w" \
+            -o "dist/dnscat-server_linux_${A}" ./cmd/server
+          go build -trimpath -ldflags "-s -w" \
+            -o "dist/dnscat-node_linux_${A}" ./cmd/node
+          go build -trimpath -ldflags "-s -w" \
+            -o "dist/dnscat_linux_${A}" ./cmd/cli
+          ls -l dist/
+          file dist/* || true
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum dnscat-server_linux_* dnscat-node_linux_* dnscat_linux_* \
+            > "SHA256SUMS-linux-${{ matrix.arch }}.txt"
+          cat "SHA256SUMS-linux-${{ matrix.arch }}.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dnscat-linux-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 14
+
+  publish:
+    name: Publish to Release
+    needs: build
+    runs-on: ubuntu-latest
+    # 只有打 tag，或手动触发且明确给了 tag 时才上传
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect files
+        run: |
+          set -eux
+          mkdir -p upload
+          find artifacts -type f -exec cp -t upload {} +
+          # 各架构的校验和合并成一份总表，便于使用者一次性核对
+          cat upload/SHA256SUMS-linux-*.txt | sort -k2 > upload/SHA256SUMS.txt
+          ls -l upload/
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          TAG='${{ inputs.tag }}'
+          if [ -z "${TAG}" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          # Release 可能尚未创建（直接推 tag 的情况），不存在就建一个
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release create "${TAG}" --title "${TAG}" --generate-notes
+          fi
+          gh release upload "${TAG}" upload/* --clobber

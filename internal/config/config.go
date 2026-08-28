@@ -3,6 +3,9 @@ package config
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"strconv"
@@ -139,10 +142,22 @@ func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
 	if path != "" {
-		if data, err := os.ReadFile(path); err == nil {
+		data, err := os.ReadFile(path)
+		switch {
+		case err == nil:
 			if err := yaml.Unmarshal(data, cfg); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("解析配置文件 %s 失败: %w", path, err)
 			}
+		case errors.Is(err, fs.ErrNotExist):
+			// 文件不存在是允许的：开发时可以不带配置直接跑，用内置默认值。
+			log.Printf("[Config] 配置文件 %s 不存在，使用内置默认值", path)
+		default:
+			// 其余错误（最常见的是权限不足）必须报出来。
+			// 早期版本在这里静默回退到默认值，导致的现象极具误导性：
+			// 服务以非 root 用户运行、读不到 /etc/dnscat/config.yaml 时，
+			// 会悄悄改用默认的相对路径数据库，最终报一个与权限毫无关联的
+			// "unable to open database file"，排查方向完全被带偏。
+			return nil, fmt.Errorf("读取配置文件 %s 失败: %w", path, err)
 		}
 	}
 

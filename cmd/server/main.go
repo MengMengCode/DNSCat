@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"dnscat/internal/seclogstore"
 	"dnscat/internal/securitystore"
 	"dnscat/internal/telemetrystore"
+	"dnscat/internal/webui"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -212,14 +214,39 @@ func main() {
 	r.GET("/dns-query", dnsServer.DoHHandler)
 	r.POST("/dns-query", dnsServer.DoHHandler)
 
-	// Static UI assets fallback if web/dist exists
-	if _, err := os.Stat("web/dist"); err == nil {
-		r.Static("/assets", "web/dist/assets")
-		r.StaticFile("/favicon.svg", "web/dist/favicon.svg")
-		r.StaticFile("/countries-110m.json", "web/dist/countries-110m.json")
+	// Web 控制台静态资源：优先用编译期嵌入的副本，回退到磁盘 web/dist。
+	// 嵌入后二进制自带控制台，不再依赖进程工作目录——systemd 单元的
+	// WorkingDirectory 指向数据目录，那里没有前端产物，靠相对路径是找不到的。
+	if uiFS, uiSrc := webui.FS(); uiFS != nil {
+		log.Printf("[Web UI] 控制台静态资源来源: %s", uiSrc)
+
+		if assets, err := fs.Sub(uiFS, "assets"); err == nil {
+			r.StaticFS("/assets", http.FS(assets))
+		} else {
+			log.Printf("[Web UI] 未找到 assets 子目录: %v", err)
+		}
+
+		serveUIFile := func(name, contentType string) gin.HandlerFunc {
+			return func(c *gin.Context) {
+				data, err := fs.ReadFile(uiFS, name)
+				if err != nil {
+					c.Status(http.StatusNotFound)
+					return
+				}
+				c.Data(http.StatusOK, contentType, data)
+			}
+		}
+		r.GET("/favicon.svg", serveUIFile("favicon.svg", "image/svg+xml"))
+		r.GET("/countries-110m.json", serveUIFile("countries-110m.json", "application/json"))
+
 		r.NoRoute(func(c *gin.Context) {
 			if strings.HasPrefix(c.Request.URL.Path, "/api/") || c.Request.URL.Path == "/api" {
 				c.JSON(http.StatusNotFound, gin.H{"error": "API route not found"})
+				return
+			}
+			data, err := fs.ReadFile(uiFS, "index.html")
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Web console assets not found"})
 				return
 			}
 			// index.html 必须禁用缓存：它引用的是带内容 hash 的 JS/CSS 文件名，
@@ -227,8 +254,11 @@ func main() {
 			// 表现为「改动明明部署了却不生效」，只能靠用户手动硬刷新解决。
 			// /assets 下的文件名自带 hash，内容不可变，继续走默认强缓存即可。
 			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
-			c.File("web/dist/index.html")
+			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 		})
+	} else {
+		log.Printf("[Web UI] 未找到控制台静态资源（无嵌入副本，也无 %s 目录），本进程仅提供 API",
+			webui.DiskDir)
 	}
 
 	// API Routes Group

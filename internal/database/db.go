@@ -10,9 +10,14 @@ import (
 	"dnscat/internal/config"
 	"dnscat/internal/model"
 
+	// 纯 Go 的 SQLite 驱动（内部走 modernc.org/sqlite 的转译实现）。
+	// 不能用 gorm.io/driver/sqlite：它依赖 mattn/go-sqlite3，那是 CGO 实现，
+	// 用 CGO_ENABLED=0 交叉编译出的二进制里 sqlite 只是个 stub，
+	// 运行时会直接报 "go-sqlite3 requires cgo to work"。
+	// 而发布产物必须能免 CGO 交叉编译到 amd64/386/arm64/armv7 四种架构。
+	"github.com/glebarez/sqlite"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/mysql"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )

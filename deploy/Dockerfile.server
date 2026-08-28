@@ -25,12 +25,17 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-# CGO_ENABLED=0 生成静态二进制，才能在 alpine（musl）里直接运行；
+# 把前端产物放进 embed 包目录，使 server 二进制自带控制台。
+# 这样容器与二进制安装共用同一套资源加载逻辑，也不再依赖进程的工作目录。
+COPY --from=web-builder /src/web/dist ./internal/webui/dist
+
+# CGO_ENABLED=0 生成静态二进制，才能在 alpine（musl）里直接运行。
+# 注意：SQLite 用的是纯 Go 驱动（glebarez/sqlite），所以免 CGO 也能正常读写数据库。
 # TARGETARCH 由 buildx 注入，未设置时用构建机架构，天然同时支持 amd64/arm64。
 ARG TARGETOS=linux
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags "-s -w" -o /out/server ./cmd/server && \
+    go build -tags embedui -trimpath -ldflags "-s -w" -o /out/server ./cmd/server && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags "-s -w" -o /out/dnscat ./cmd/cli
 
@@ -42,7 +47,7 @@ WORKDIR /app
 
 COPY --from=go-builder /out/server /app/server
 COPY --from=go-builder /out/dnscat /usr/local/bin/dnscat
-COPY --from=web-builder /src/web/dist /app/web/dist
+# 控制台资源已编译进 server 二进制，运行期无需再拷 web/dist。
 COPY deploy/config.example.yaml /app/config.yaml
 
 # sqlite 模式的数据目录；MySQL 模式下不使用

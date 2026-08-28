@@ -28,6 +28,9 @@ node_modules/
 web/dist/
 web/.vite/
 .vite/
+# 构建时由 web/dist 拷贝而来，供 go:embed 打进 server 二进制（-tags embedui）。
+# 属派生产物，不入库。
+internal/webui/dist/
 *.tsbuildinfo
 .eslintcache
 npm-debug.log*
