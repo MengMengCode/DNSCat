@@ -226,6 +226,7 @@ declare -A M_ZH=(
     [cred_title]="首次安装已生成随机管理员口令，请立即保存，此口令仅显示这一次"
     [cred_user]="  管理员账号 : %s"
     [cred_pass]="  初始口令   : %s"
+    [cred_kept]="数据库中已有管理员，沿用原有账号与口令（口令仅存 bcrypt 摘要，无法回显）"
     [cred_none]="未从日志中提取到初始口令，可能原因:"
     [cred_none1]="  · 本机此前已安装过，数据库中已有管理员（口令仅存 bcrypt 摘要，无法回显）"
     [cred_none2]="  · 服务尚未完成启动"
@@ -429,6 +430,7 @@ declare -A M_EN=(
     [cred_user]="  Username : %s"
     [cred_pass]="  Password : %s"
     [cred_none]="Could not extract the initial password from the log. Possible reasons:"
+    [cred_kept]="The database already has an administrator; the existing account and password are kept (only a bcrypt digest is stored)"
     [cred_none1]="  - This host was installed before and the database already has an administrator (only a bcrypt digest is stored)"
     [cred_none2]="  - The service has not finished starting yet"
     [cred_none_log]="Full log: journalctl -u dnscat-server -n 100 --no-pager"
@@ -1580,24 +1582,68 @@ install_binaries() {
     fi
 }
 
+# current_unit_logs 只返回「本次服务启动」产生的日志。
+#
+# 早前的写法是 journalctl -n 200 后 sed | tail -1。journald 会保留上一次安装的
+# 日志，重装时第一轮轮询就能匹配到上一次的口令，循环随即 break，
+# 于是把一个早已失效的口令当作本次的初始口令打印出来——对「口令只显示这一次」
+# 的设计来说这是致命的：使用者拿到的口令根本登不进去。
+# _SYSTEMD_INVOCATION_ID 精确对应 unit 的当前这一次启动，天然排除历史记录。
+current_unit_logs() {
+    local inv="" since=""
+
+    inv="$(systemctl show -p InvocationID --value dnscat-server 2>/dev/null)" || inv=""
+    if [[ -n "${inv}" ]]; then
+        journalctl "_SYSTEMD_INVOCATION_ID=${inv}" --no-pager 2>/dev/null || true
+        return 0
+    fi
+
+    # systemd < 232 没有 InvocationID，退回按本次进入 active 的时刻过滤
+    since="$(systemctl show -p ActiveEnterTimestamp --value dnscat-server 2>/dev/null)" || since=""
+    if [[ -n "${since}" ]]; then
+        journalctl -u dnscat-server --since "${since}" --no-pager 2>/dev/null || true
+        return 0
+    fi
+
+    journalctl -u dnscat-server --no-pager -n 200 2>/dev/null || true
+}
+
 # 首次安装才会有随机口令输出；库里已有管理员时不会再打印。
 print_initial_credentials() {
-    local pw="" user="" i logs=""
-    for i in $(seq 1 30); do
-        if command -v journalctl >/dev/null 2>&1; then
-            logs="$(journalctl -u dnscat-server --no-pager -n 200 2>/dev/null || true)"
-            pw="$(printf '%s\n' "${logs}" | sed -nE 's/.*初始随机口令[^:]*:[[:space:]]*([^[:space:]]+).*/\1/p' | tail -1)"
-            user="$(printf '%s\n' "${logs}" | sed -nE 's/.*管理员账号[^:]*:[[:space:]]*([^[:space:]]+).*/\1/p' | tail -1)"
-        fi
-        [[ -n "${pw}" ]] && break
-        sleep 1
-    done
+    local pw="" user="" i logs="" existed="no"
+
+    if command -v journalctl >/dev/null 2>&1; then
+        for i in $(seq 1 30); do
+            logs="$(current_unit_logs)"
+            pw="$(printf '%s\n' "${logs}" \
+                | sed -nE 's/.*初始随机口令[^:]*:[[:space:]]*([^[:space:]]+).*/\1/p' | tail -1)"
+            if [[ -n "${pw}" ]]; then
+                # 账号必须与口令取自同一次启动的同一段输出。
+                # 排除「已存在」那行：它同样含「管理员账号」，
+                # 早前会被匹配成账号名，打印出「已存在（口令仅以」这种碎片。
+                user="$(printf '%s\n' "${logs}" \
+                    | grep '管理员账号' | grep -v '已存在' \
+                    | sed -nE 's/.*管理员账号[^:]*:[[:space:]]*([^[:space:]]+).*/\1/p' | tail -1)"
+                break
+            fi
+            # 库里已有管理员时服务明确打印「已存在」，不必再等满 30 轮
+            if printf '%s\n' "${logs}" | grep -q '管理员账号.*已存在'; then
+                existed="yes"
+                break
+            fi
+            sleep 1
+        done
+    fi
 
     hr
     if [[ -n "${pw}" ]]; then
         printf '%s%s%s\n' "${C_BLD}" "$(t cred_title)" "${C_RST}"
         plain cred_user "${user:-admin}"
         printf '%s%s%s\n' "${C_BLD}" "$(t cred_pass "${pw}")" "${C_RST}"
+    elif [[ "${existed}" == "yes" ]]; then
+        # 服务明确报告库里已有管理员，无需再列举其他可能原因
+        plain cred_kept
+        plain cred_none_reset
     else
         plain cred_none
         plain cred_none1
@@ -1819,6 +1865,10 @@ ENV_EOF
         ok env_written "${env_file}"
     fi
 
+    # 记下启动时刻，供后面按 --since 过滤容器日志，避免读到上一次安装的输出
+    local DOCKER_UP_SINCE
+    DOCKER_UP_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
     # 默认拉取 CI 发布的多架构镜像：目标机上不必装 Go/Node，也不用等几分钟编译。
     # compose 里 image 与 build 段并存，--from-source 时才就地构建。
     #
@@ -1853,11 +1903,22 @@ ENV_EOF
 
     if [[ "${ROLE}" == "master" ]]; then
         local i pw="" user="" logs=""
+        # --since 把日志限定在本次启动之后。容器被复用（未重建）时旧日志还在，
+        # 不加限制会读到上一次安装的口令，那个口令已经与库里的不一致了。
         for i in $(seq 1 60); do
-            logs="$( cd "${SCRIPT_DIR}" && ${compose_bin} -f "${compose_file}" logs --no-color server 2>/dev/null || true )"
+            logs="$( cd "${SCRIPT_DIR}" \
+                && ${compose_bin} -f "${compose_file}" logs --no-color --since "${DOCKER_UP_SINCE}" server 2>/dev/null \
+                || ${compose_bin} -f "${compose_file}" logs --no-color server 2>/dev/null \
+                || true )"
             pw="$(printf '%s\n' "${logs}" | sed -nE 's/.*初始随机口令[^:]*:[[:space:]]*([^[:space:]]+).*/\1/p' | tail -1)"
-            user="$(printf '%s\n' "${logs}" | sed -nE 's/.*管理员账号[^:]*:[[:space:]]*([^[:space:]]+).*/\1/p' | tail -1)"
-            [[ -n "${pw}" ]] && break
+            if [[ -n "${pw}" ]]; then
+                # 排除「已存在」那行，它也含「管理员账号」
+                user="$(printf '%s\n' "${logs}" \
+                    | grep '管理员账号' | grep -v '已存在' \
+                    | sed -nE 's/.*管理员账号[^:]*:[[:space:]]*([^[:space:]]+).*/\1/p' | tail -1)"
+                break
+            fi
+            printf '%s\n' "${logs}" | grep -q '管理员账号.*已存在' && break
             sleep 2
         done
         hr
