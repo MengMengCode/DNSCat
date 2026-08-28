@@ -7,15 +7,14 @@
 #
 # Quick start (one command, nothing to clone) / 一键安装（无需克隆仓库）:
 #
+#   Interactive / 交互式（先选语言，再选安装方式与角色）:
+#     curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash
+#
 #   Master / 主控:
-#     curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh \
-#       | sudo bash -s -- --yes --role master
+#     curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --role master
 #
 #   Edge node / 边缘端（主控安装完成后会打印填好令牌的现成命令）:
-#     curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh \
-#       | sudo bash -s -- --yes --role node \
-#           --master-url http://<MASTER_IP>:8080 --node-id edge-01 \
-#           --cluster-token <TOKEN> --public-ip <EDGE_PUBLIC_IP>
+#     curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --role node --master-url http://<MASTER_IP>:8080 --node-id edge-01 --cluster-token <TOKEN> --public-ip <EDGE_PUBLIC_IP>
 #
 # See --help for all options.
 #
@@ -498,15 +497,16 @@ Usage / 用法:
   sudo bash deploy/install.sh [options]
 
   Interactive (asks for language, mode and role) / 交互式（询问语言、方式与角色）:
-      sudo bash deploy/install.sh
+      curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash
 
-  Master, binary install / 主控，二进制安装:
-      sudo bash deploy/install.sh --lang en --mode binary --role master
+  Master / 主控:
+      curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --role master
 
   Edge node / 被控节点:
-      sudo bash deploy/install.sh --mode binary --role node \
-           --master-url http://203.0.113.10:8080 --node-id edge-fra-01 \
-           --cluster-token <token> --public-ip 203.0.113.20
+      curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --role node --master-url http://203.0.113.10:8080 --node-id edge-fra-01 --cluster-token <TOKEN> --public-ip 203.0.113.20
+
+  From a local checkout / 已克隆仓库时:
+      sudo bash deploy/install.sh
 
 Options / 选项:
   --lang zh|en              界面语言 / UI language (default: ask, or zh)
@@ -1526,12 +1526,10 @@ print_edge_join_command() {
     printf '\n'
     printf '%s%s%s\n' "${C_BLD}" "$(t edge_cmd_title)" "${C_RST}"
     printf '\n'
-    printf '  curl -fsSL %s \\\n' "${raw}"
-    printf '    | sudo bash -s -- --yes --lang %s --mode binary --role node \\\n' "${UI_LANG}"
-    printf '        --master-url http://%s:%s \\\n' "${master_ip}" "${HTTP_PORT}"
-    printf '        --node-id edge-01 \\\n'
-    printf '        --cluster-token %s \\\n' "${CLUSTER_TOKEN}"
-    printf '        --public-ip <EDGE_PUBLIC_IP>\n'
+    # 刻意输出成单行：多行加反斜杠从终端里复制极易漏掉续行符，
+    # 粘到目标机上就成了半条命令。
+    printf '  curl -fsSL %s | sudo bash -s -- --yes --lang %s --mode binary --role node --master-url http://%s:%s --node-id edge-01 --cluster-token %s --public-ip <EDGE_PUBLIC_IP>\n' \
+        "${raw}" "${UI_LANG}" "${master_ip}" "${HTTP_PORT}" "${CLUSTER_TOKEN}"
     printf '\n'
     plain edge_cmd_note
 }

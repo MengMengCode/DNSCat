@@ -84,34 +84,35 @@ The master serves the API, the control panel, and authoritative DNS. Edge nodes 
 
 ### One-click installer
 
-The installer defaults to a plain binary install managed by systemd — no Docker required, with SQLite as the database.
+Nothing to clone. The script asks for a language, then whether to install via native binary (systemd) or Docker, then the role — and completes the whole installation itself.
 
 ```bash
-git clone <repository-url> dnscat
-cd dnscat
-sudo ./deploy/install.sh
+curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash
 ```
 
-The first run generates a random administrator password and prints it in the startup banner. There is no factory default password.
-
-Install an edge node on another machine:
+Prefer to skip the questions? Install a master straight away — binary mode with SQLite, no Docker needed:
 
 ```bash
-sudo ./deploy/install.sh --role node \
-  --master-url http://203.0.113.10:8080 \
-  --node-id edge-fra-01 \
-  --cluster-token <token from the master> \
-  --public-ip 203.0.113.20
+curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --role master
 ```
 
-Supported architectures are `linux/amd64` and `linux/arm64`.
+The first run generates a random administrator password and prints it once. There is no factory default password.
+
+When the master finishes it prints a ready-to-paste command for edge nodes with the cluster token and master URL already filled in. It looks like this:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --role node --master-url http://203.0.113.10:8080 --node-id edge-fra-01 --cluster-token <TOKEN> --public-ip 203.0.113.20
+```
+
+Supported architectures: `linux/amd64`, `linux/386`, `linux/arm64`, `linux/armv7`.
 
 Useful options:
 
 | Option | Purpose |
 | --- | --- |
-| `--mode binary\|docker` | Install method; defaults to `binary`. |
-| `--role master\|node` | Install role; defaults to `master`. |
+| `--lang zh\|en` | Interface language; asked interactively when omitted. |
+| `--mode binary\|docker` | Install method; asked interactively, otherwise `binary`. |
+| `--role master\|node` | Install role; asked interactively, otherwise `master`. |
 | `--db sqlite\|mysql` | Master database; defaults to `sqlite`. |
 | `--db-dsn DSN` | Custom database connection string, overrides `--db`. |
 | `--http-port` / `--dns-port` | Panel and authoritative DNS ports. |
@@ -125,8 +126,10 @@ About port 53: in binary mode the installer detects what already holds the port 
 
 ### Docker Compose
 
+The installer handles the Docker path end to end as well — it fetches a source snapshot when you run it standalone, builds the images and starts the stack:
+
 ```bash
-sudo ./deploy/install.sh --mode docker
+curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --mode docker --role master
 ```
 
 To run Compose directly, prepare `deploy/.env` first — the three secrets have no defaults, so Compose fails fast rather than silently using weak values:

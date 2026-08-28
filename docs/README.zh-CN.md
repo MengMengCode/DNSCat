@@ -83,34 +83,35 @@ DnsCat 是一套可自托管的权威 DNS 解析服务与控制面板。把域�
 
 ### 一键安装脚本
 
-安装脚本默认走二进制 + systemd，不需要 Docker，数据库用 SQLite。
+无需克隆仓库。脚本会先让你选语言，再选安装方式（二进制 systemd 或 Docker）与角色，然后自行完成全部安装。
 
 ```bash
-git clone <仓库地址> dnscat
-cd dnscat
-sudo ./deploy/install.sh
+curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash
 ```
 
-首次安装会随机生成管理员口令并打印在启动横幅里，不存在任何出厂默认口令。
-
-在另一台机器上安装边缘节点：
+不想回答问题、直接装主控（二进制 + SQLite，不需要 Docker）：
 
 ```bash
-sudo ./deploy/install.sh --role node \
-  --master-url http://203.0.113.10:8080 \
-  --node-id edge-fra-01 \
-  --cluster-token <主控的集群令牌> \
-  --public-ip 203.0.113.20
+curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --role master
 ```
 
-支持架构：`linux/amd64`、`linux/arm64`。
+首次安装会随机生成管理员口令并打印一次，不存在任何出厂默认口令。
+
+主控安装完成后会打印一条填好集群令牌与主控地址的边缘节点命令，复制到边缘机器执行即可。形如：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --role node --master-url http://203.0.113.10:8080 --node-id edge-fra-01 --cluster-token <集群令牌> --public-ip 203.0.113.20
+```
+
+支持架构：`linux/amd64`、`linux/386`、`linux/arm64`、`linux/armv7`。
 
 常用参数：
 
 | 参数 | 作用 |
 | --- | --- |
-| `--mode binary\|docker` | 安装方式，默认 `binary`。 |
-| `--role master\|node` | 安装角色，默认 `master`。 |
+| `--lang zh\|en` | 界面语言，省略时交互询问。 |
+| `--mode binary\|docker` | 安装方式，交互询问，非交互时默认 `binary`。 |
+| `--role master\|node` | 安装角色，交互询问，非交互时默认 `master`。 |
 | `--db sqlite\|mysql` | 主控数据库类型，默认 `sqlite`。 |
 | `--db-dsn DSN` | 自定义数据库连接串，指定后 `--db` 失效。 |
 | `--http-port` / `--dns-port` | 控制台与权威 DNS 端口。 |
@@ -124,8 +125,10 @@ sudo ./deploy/install.sh --role node \
 
 ### Docker Compose
 
+Docker 这条路同样由安装脚本一手完成——独立运行时它会自行拉取源码快照、构建镜像并把服务拉起来：
+
 ```bash
-sudo ./deploy/install.sh --mode docker
+curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --mode docker --role master
 ```
 
 若要直接用 Compose，需先准备 `deploy/.env`。三个密钥都没有默认值，未设置时 Compose 会直接报错退出，不会静默使用弱口令：
