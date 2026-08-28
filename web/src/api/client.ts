@@ -27,9 +27,14 @@ import {
   SecurityPolicy,
   SecurityResponse,
   SecurityEventsResponse,
+  BuildInfo,
 } from '../types';
 
 const BASE_URL = '/api';
+
+// 构建信息在服务端进程的生命周期内不会变化，缓存首次请求的 promise，
+// 组件重挂载时不再重复打接口。请求失败不缓存，留出重试机会。
+let buildInfoPromise: Promise<BuildInfo> | null = null;
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('dnscat_token');
@@ -69,6 +74,17 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 export const api = {
+  // 服务端构建信息（版本号 / 提交号 / 构建时间 / 平台）
+  getVersion: (): Promise<BuildInfo> => {
+    if (!buildInfoPromise) {
+      buildInfoPromise = request<BuildInfo>('/version').catch((err) => {
+        buildInfoPromise = null;
+        throw err;
+      });
+    }
+    return buildInfoPromise;
+  },
+
   // Auth
   login: (data: { username: string; password: string }) =>
     request<{ token: string; user: User }>('/auth/login', {

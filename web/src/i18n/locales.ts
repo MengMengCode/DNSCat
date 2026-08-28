@@ -14,6 +14,10 @@ export const translations = {
     'header.copied': '已复制到剪贴板！',
     'header.cluster_online': '集群 Anycast 活跃',
     'header.global_context': '全局',
+    'header.version': '版本',
+    'header.version_commit': '提交',
+    'header.version_built': '构建于',
+    'header.version_dev': '开发构建（未注入版本号）',
 
     // Sidebar Groups
     'sidebar.group_traffic': 'DNS 解析与流量',
@@ -294,6 +298,10 @@ export const translations = {
     'header.copied': 'Copied to clipboard!',
     'header.cluster_online': 'Anycast Active',
     'header.global_context': 'Global',
+    'header.version': 'Version',
+    'header.version_commit': 'Commit',
+    'header.version_built': 'Built',
+    'header.version_dev': 'Development build (no version injected)',
 
     // Sidebar Groups
     'sidebar.group_traffic': 'DNS & Traffic',

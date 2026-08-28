@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sun,
@@ -8,9 +8,10 @@ import {
   Menu
 } from 'lucide-react';
 import { DnsCatLogo } from './Logo';
-import { Domain } from '../types';
+import { BuildInfo, Domain } from '../types';
 import { TabType } from './NavTabs';
 import { useI18n } from '../i18n/I18nContext';
+import { api } from '../api/client';
 
 interface TopHeaderProps {
   selectedDomain: Domain | null;
@@ -78,6 +79,35 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenMobileNav,
 }) => {
   const { language, setLanguage, t } = useI18n();
+
+  // 服务端二进制的构建信息。取不到就不显示徽标——版本号是辅助信息，
+  // 没必要为它在页头留一块报错位。
+  const [build, setBuild] = useState<BuildInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api
+      .getVersion()
+      .then((info) => {
+        if (alive) setBuild(info);
+      })
+      .catch(() => {
+        /* 忽略：不影响控制台其他功能 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 悬停时给出提交号与构建时间，排查线上问题时能直接对上具体构建
+  const versionTitle = (() => {
+    if (!build) return '';
+    if (build.version === 'dev') return t('header.version_dev');
+    const parts = [`${t('header.version')}: ${build.version}`];
+    if (build.commit) parts.push(`${t('header.version_commit')}: ${build.commit}`);
+    if (build.date) parts.push(`${t('header.version_built')}: ${build.date}`);
+    parts.push(`${build.go_version} · ${build.platform}`);
+    return parts.join('\n');
+  })();
 
   const getTabTitle = () => {
     switch (activeTab) {
@@ -169,8 +199,19 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </Link>
         </div>
 
-        {/* Right: Switchers */}
+        {/* Right: Version + Switchers */}
         <div className="flex items-center gap-2.5 shrink-0">
+          {/* 运行中二进制的版本号。窄屏隐藏，避免和右侧两个按钮挤在一起。
+              取不到构建信息时整块不渲染。 */}
+          {build && (
+            <span
+              title={versionTitle}
+              className="hidden sm:inline-flex items-center px-2 py-1 rounded-sm border border-border bg-bg-subtle font-mono text-[11px] text-secondary cursor-default"
+            >
+              {build.version}
+            </span>
+          )}
+
           {/* Language Switcher Button (No flags, clean text) */}
           <button
             onClick={toggleLanguage}

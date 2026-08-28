@@ -542,3 +542,17 @@ export interface SecurityResponse {
   dnssec_enabled: boolean;
   active_bans: number;
 }
+
+/**
+ * 运行中服务端二进制的构建信息（GET /api/version）。
+ *
+ * 值由编译期 ldflags 注入，未注入时 version 为 "dev"。
+ * commit 与 date 在本地开发构建下可能为空串。
+ */
+export interface BuildInfo {
+  version: string;
+  commit: string;
+  date: string;
+  go_version: string;
+  platform: string;
+}

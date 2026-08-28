@@ -281,6 +281,7 @@ func main() {
 	statsHandler := api.NewStatsHandler()
 	certHandler := api.NewCertHandler()
 	settingHandler := api.NewSettingHandler()
+	versionHandler := api.NewVersionHandler()
 	nameserverHandler := api.NewNameserverHandler()
 	applicantHandler := api.NewApplicantHandler()
 	routingHandler := api.NewRoutingHandler()
@@ -404,6 +405,9 @@ func main() {
 			protected.POST("/nameservers", nameserverHandler.CreateNameserver)
 			protected.PUT("/nameservers/:id", nameserverHandler.UpdateNameserver)
 			protected.DELETE("/nameservers/:id", nameserverHandler.DeleteNameserver)
+
+			// 运行中二进制的构建信息，控制台右上角展示用
+			protected.GET("/version", versionHandler.GetVersion)
 
 			// System Settings
 			protected.GET("/settings", settingHandler.GetSettings)
