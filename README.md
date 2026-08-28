@@ -122,6 +122,20 @@ Useful options:
 | `--uninstall` | Remove the service; add `--purge` to delete configuration and data too. |
 | `-y, --yes` | Non-interactive, auto-confirm every remediation step. |
 
+Downloaded binaries are verified against the release's `SHA256SUMS.txt` before installation. A mismatch aborts the install.
+
+### Cutting a release (maintainers)
+
+`.github/workflows/release.yml` builds twelve binaries on tag push — `linux/{amd64,386,arm64,armv7}` × server/node/CLI — and attaches them to the GitHub Release along with `SHA256SUMS.txt`. `scripts/release.sh` drives it:
+
+```bash
+scripts/release.sh v1.0.0 --dry-run   # run every check, change nothing
+scripts/release.sh v1.0.0             # tag, push, watch the run, verify the assets
+scripts/release.sh --verify v1.0.0    # re-check an existing release's assets
+```
+
+It refuses to tag a dirty tree or a HEAD that differs from the remote, then cross-checks that every asset name the installer builds its download URL from actually exists — a missing asset silently degrades the one-click install into a from-source build.
+
 About port 53: in binary mode the installer detects what already holds the port and steps aside where it can do so safely. `systemd-resolved` is handled by disabling its stub listener, which leaves the host's own name resolution intact. Occupants it cannot resolve safely abort the install with guidance. Docker mode never modifies host services — it aborts on conflict and prints the steps for you.
 
 ### Docker Compose

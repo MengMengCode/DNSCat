@@ -176,6 +176,14 @@ declare -A M_ZH=(
     [dl_done]="下载完成"
     [dl_need_tool]="需要 curl 或 wget 才能下载预编译产物，也可用 --from-source 从源码编译"
     [dl_cli_fail]="未能下载管理 CLI %s，已跳过。重置管理员口令等操作需另行处理"
+    [sum_fetch]="获取校验和清单: %s"
+    [sum_no_tool]="系统没有 sha256sum 或 shasum，跳过校验和核对"
+    [sum_missing_official]="无法从官方 Release 获取 %s。可能是网络问题或该版本尚未发布完成，已中止以免安装来源不明的文件"
+    [sum_missing_mirror]="镜像站 %s 没有校验和清单，已跳过核对（自定义 DNSCAT_RELEASE_BASE）"
+    [sum_no_entry]="校验和清单里没有 %s 的条目，已跳过该文件的核对"
+    [sum_ok]="校验和核对通过: %s"
+    [sum_mismatch]="校验和不匹配: %s\n  期望 %s\n  实际 %s\n下载物已损坏或被篡改，已中止安装"
+    [sum_abort]="下载物完整性校验未通过，已中止。可重试安装，或用 --from-source 从源码编译"
     [use_local_bin]="使用已有二进制: %s (linux/%s)"
     [build_start]="从源码编译 (linux/%s)"
     [build_no_go]="未找到 go，无法从源码编译，请安装 Go 1.25 或更高版本"
@@ -368,6 +376,14 @@ declare -A M_EN=(
     [dl_done]="Download complete"
     [dl_need_tool]="curl or wget is required to download prebuilt binaries; or use --from-source"
     [dl_cli_fail]="Could not download the management CLI %s, skipping. Admin password reset will need another route"
+    [sum_fetch]="Fetching checksum manifest: %s"
+    [sum_no_tool]="Neither sha256sum nor shasum is available, skipping checksum verification"
+    [sum_missing_official]="Could not fetch %s from the official release. Either the network failed or the release is still being published; aborting rather than installing unverified files"
+    [sum_missing_mirror]="Mirror %s has no checksum manifest, skipping verification (custom DNSCAT_RELEASE_BASE)"
+    [sum_no_entry]="No entry for %s in the checksum manifest, skipping verification for that file"
+    [sum_ok]="Checksum verified: %s"
+    [sum_mismatch]="Checksum mismatch for %s\n  expected %s\n  actual   %s\nThe download is corrupt or tampered with; aborting"
+    [sum_abort]="Integrity check failed, aborting. Retry the install, or use --from-source to build from source"
     [use_local_bin]="Using existing binaries in %s (linux/%s)"
     [build_start]="Building from source (linux/%s)"
     [build_no_go]="go not found, cannot build from source. Install Go 1.25 or newer"
@@ -1150,6 +1166,71 @@ use_local_binaries() {
     return 0
 }
 
+SUMS_FILE=""
+
+sha256_of() {
+    local f="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "${f}" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "${f}" | awk '{print $1}'
+    else
+        return 1
+    fi
+}
+
+# fetch_checksums 取回 Release 的 SHA256SUMS.txt。
+#
+# 取不到时的处理刻意分两种：
+#   - 官方 GitHub 地址：中止。清单本该存在，取不到说明网络异常或发布未完成，
+#     此时继续装等于把一个来源不明的可执行文件以 root 跑起来。
+#   - 自定义 DNSCAT_RELEASE_BASE（内网镜像）：仅告警。镜像可能只同步了二进制。
+fetch_checksums() {
+    local base="$1"
+    SUMS_FILE=""
+
+    if ! sha256_of /dev/null >/dev/null 2>&1; then
+        warn sum_no_tool
+        return 0
+    fi
+
+    local dest="${WORK_DIR}/SHA256SUMS.txt"
+    log sum_fetch "${base}/SHA256SUMS.txt"
+    if download_to "${base}/SHA256SUMS.txt" "${dest}" 2>/dev/null && [[ -s "${dest}" ]]; then
+        SUMS_FILE="${dest}"
+        return 0
+    fi
+
+    if [[ -n "${DNSCAT_RELEASE_BASE}" ]]; then
+        warn sum_missing_mirror "${base}"
+        return 0
+    fi
+    die sum_missing_official "SHA256SUMS.txt"
+}
+
+# verify_checksum 核对单个文件。清单为 sha256sum 输出格式：`<hash>  <filename>`。
+# 返回 1 表示确凿的不匹配；清单缺失或无该条目返回 0（由 fetch_checksums 决定严格程度）。
+verify_checksum() {
+    local path="$1" name="$2"
+    [[ -n "${SUMS_FILE}" ]] || return 0
+
+    local want
+    want="$(awk -v n="${name}" '$2 == n || $2 == "*" n { print $1; exit }' "${SUMS_FILE}")"
+    if [[ -z "${want}" ]]; then
+        warn sum_no_entry "${name}"
+        return 0
+    fi
+
+    local got
+    got="$(sha256_of "${path}")" || return 0
+    if [[ "${want}" != "${got}" ]]; then
+        warn sum_mismatch "${name}" "${want}" "${got}"
+        return 1
+    fi
+    ok sum_ok "${name}"
+    return 0
+}
+
 download_release() {
     local base
     base="$(release_base)" || return 1
@@ -1169,12 +1250,18 @@ download_release() {
         warn dl_fail "${main_name}"
         return 1
     fi
+
+    # 先取清单再逐个核对。主程序校验不通过必须中止：
+    # 这个文件接下来会以 root 装到 /usr/local/bin 并由 systemd 常驻运行。
+    fetch_checksums "${base}"
+    verify_checksum "${out}/${main_name}" "${main_name}" || die sum_abort
     chmod +x "${out}/${main_name}"
 
     if [[ "${ROLE}" == "master" ]]; then
         BIN_SERVER="${out}/${main_name}"
         local cli_name="dnscat_linux_${ARCH}"
-        if download_to "${base}/${cli_name}" "${out}/${cli_name}" 2>/dev/null; then
+        if download_to "${base}/${cli_name}" "${out}/${cli_name}" 2>/dev/null \
+            && verify_checksum "${out}/${cli_name}" "${cli_name}"; then
             chmod +x "${out}/${cli_name}"
             BIN_CLI="${out}/${cli_name}"
         else

@@ -106,8 +106,12 @@ jobs:
     name: Publish to Release
     needs: build
     runs-on: ubuntu-latest
-    # 只有打 tag，或手动触发且明确给了 tag 时才上传
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    # 只有打 tag，或手动触发且明确给了 tag 时才上传。
+    # 显式判断 event_name：push 事件下 inputs 上下文并不存在，
+    # 写成 inputs.tag != '' 要靠"未定义按 null、null 与空串松散相等"才成立，不依赖这层隐式语义。
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     steps:
       - uses: actions/checkout@v4
 
@@ -128,13 +132,39 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -eux
+          set -eu
           TAG='${{ inputs.tag }}'
           if [ -z "${TAG}" ]; then
             TAG="${GITHUB_REF_NAME}"
           fi
-          # Release 可能尚未创建（直接推 tag 的情况），不存在就建一个
+          echo "Publishing to tag: ${TAG}"
+          # Release 可能尚未创建（直接推 tag 的情况），不存在就建一个。
+          # --latest 显式声明：install.sh 默认走 /releases/latest/download，
+          # 若被判定为 prerelease 该地址就不会指向本次发布。
           if ! gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release create "${TAG}" --title "${TAG}" --generate-notes
+            gh release create "${TAG}" --title "${TAG}" --generate-notes --latest
           fi
           gh release upload "${TAG}" upload/* --clobber
+
+          # 交叉核对：install.sh 按 dnscat-{server,node}_linux_<arch> 与 dnscat_linux_<arch>
+          # 拼下载地址，任一缺失都会让对应架构的一键安装退化成源码编译。
+          # 这里逐个断言，缺失即让发布失败，而不是留个装不上的 Release 在线上。
+          echo "--- verifying assets expected by deploy/install.sh ---"
+          gh release view "${TAG}" --json assets --jq '.assets[].name' | sort > /tmp/actual.txt
+          cat /tmp/actual.txt
+          missing=0
+          for arch in amd64 386 arm64 armv7; do
+            for prog in dnscat-server dnscat-node dnscat; do
+              name="${prog}_linux_${arch}"
+              if ! grep -qxF "${name}" /tmp/actual.txt; then
+                echo "::error::missing release asset: ${name}"
+                missing=1
+              fi
+            done
+          done
+          if ! grep -qxF 'SHA256SUMS.txt' /tmp/actual.txt; then
+            echo "::error::missing release asset: SHA256SUMS.txt"
+            missing=1
+          fi
+          [ "${missing}" -eq 0 ] || exit 1
+          echo "All 12 binaries + SHA256SUMS.txt present."
