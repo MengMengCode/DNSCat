@@ -167,6 +167,8 @@ declare -A M_ZH=(
     [compose_missing]="未找到 Docker Compose，请先安装 docker compose 插件或 docker-compose"
     [compose_file_missing]="未找到 %s，请在仓库目录内执行本脚本"
     [docker_building]="构建镜像并启动容器，首次构建需要几分钟"
+    [docker_pulling]="拉取已发布镜像 (tag: %s) 并启动容器"
+    [docker_pull_fail]="镜像拉取失败，退回本地构建（需要几分钟）"
     [docker_up_fail]="容器启动失败，请查看上方构建日志"
     [env_reuse]="复用已有 %s"
     [env_written]="已生成 %s，权限 0600"
@@ -367,6 +369,8 @@ declare -A M_EN=(
     [compose_missing]="Docker Compose not found, install the docker compose plugin or docker-compose"
     [compose_file_missing]="%s not found, run this script from inside the repository"
     [docker_building]="Building images and starting containers; the first build takes a few minutes"
+    [docker_pulling]="Pulling published images (tag: %s) and starting containers"
+    [docker_pull_fail]="Image pull failed, falling back to a local build (takes a few minutes)"
     [docker_up_fail]="Containers failed to start, check the build log above"
     [env_reuse]="Reusing existing %s"
     [env_written]="Wrote %s with mode 0600"
@@ -1815,8 +1819,36 @@ ENV_EOF
         ok env_written "${env_file}"
     fi
 
-    log docker_building
-    ( cd "${SCRIPT_DIR}" && ${compose_bin} -f "${compose_file}" up -d --build ) || die docker_up_fail
+    # 默认拉取 CI 发布的多架构镜像：目标机上不必装 Go/Node，也不用等几分钟编译。
+    # compose 里 image 与 build 段并存，--from-source 时才就地构建。
+    #
+    # DNSCAT_VERSION 会映射成镜像 tag：latest 用 :latest，v1.2.3 用 :1.2.3
+    # （容器镜像 tag 不带 v 前缀，见 docker.yml 的 type=semver,pattern={{version}}）。
+    if [[ "${FROM_SOURCE}" == "yes" ]]; then
+        log docker_building
+        ( cd "${SCRIPT_DIR}" && ${compose_bin} -f "${compose_file}" up -d --build ) || die docker_up_fail
+    else
+        local img_tag="latest"
+        if [[ "${VERSION}" != "latest" ]]; then
+            img_tag="${VERSION#v}"
+        fi
+        local owner="${DNSCAT_REPO%%/*}"
+        # GHCR 路径必须全小写，而 GitHub 用户名允许大写
+        owner="$(printf '%s' "${owner}" | tr '[:upper:]' '[:lower:]')"
+        export DNSCAT_SERVER_IMAGE="ghcr.io/${owner}/dnscat-server:${img_tag}"
+        export DNSCAT_NODE_IMAGE="ghcr.io/${owner}/dnscat-node:${img_tag}"
+
+        log docker_pulling "${img_tag}"
+        # 拉取失败就退回本地构建：镜像可能尚未发布，或所在网络访问不了 ghcr.io。
+        # 直接中止会让「一键安装」在完全可自救的情况下失败。
+        if ! ( cd "${SCRIPT_DIR}" && ${compose_bin} -f "${compose_file}" pull ); then
+            warn docker_pull_fail
+            log docker_building
+            ( cd "${SCRIPT_DIR}" && ${compose_bin} -f "${compose_file}" up -d --build ) || die docker_up_fail
+        else
+            ( cd "${SCRIPT_DIR}" && ${compose_bin} -f "${compose_file}" up -d ) || die docker_up_fail
+        fi
+    fi
     ( cd "${SCRIPT_DIR}" && ${compose_bin} -f "${compose_file}" ps ) || true
 
     if [[ "${ROLE}" == "master" ]]; then

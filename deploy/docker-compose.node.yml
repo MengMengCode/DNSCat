@@ -22,6 +22,9 @@
 
 services:
   node:
+    # 默认拉取 CI 发布的多架构镜像（GHCR），目标机无需编译。
+    # 同时保留 build 段：加 --build 就地构建，用于改了源码想验证的场合。
+    image: ${DNSCAT_NODE_IMAGE:-ghcr.io/mengmengcode/dnscat-node:latest}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.node
@@ -32,13 +35,15 @@ services:
     ports:
       - "53:53/udp"
       - "53:53/tcp"
+    environment:
+      # 令牌走环境变量而非命令行：命令行参数会出现在容器内的 ps 输出与
+      # `docker inspect` 结果里，而 inspect 对能访问 docker socket 的用户都可读。
+      - DNSCAT_CLUSTER_TOKEN=${CLUSTER_TOKEN:?请在 deploy/.env 中设置 CLUSTER_TOKEN（须与主控一致）}
     command:
       - "--master"
       - "${MASTER_URL:?请在 deploy/.env 中设置 MASTER_URL，例如 http://203.0.113.10:8080}"
       - "--node-id"
       - "${NODE_ID:?请在 deploy/.env 中设置 NODE_ID（集群内唯一）}"
-      - "--token"
-      - "${CLUSTER_TOKEN:?请在 deploy/.env 中设置 CLUSTER_TOKEN（须与主控一致）}"
       - "--public-ip"
       - "${NODE_PUBLIC_IP:?请在 deploy/.env 中设置 NODE_PUBLIC_IP（本机对外公网 IP）}"
       - "--udp"

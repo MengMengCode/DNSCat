@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"dnscat/internal/buildinfo"
 	"dnscat/internal/config"
 	"dnscat/internal/database"
 	"dnscat/internal/model"
@@ -52,6 +53,9 @@ func main() {
 		case "--help", "-h", "help":
 			printHelp()
 			return
+		case "--version", "-v", "version":
+			fmt.Println(buildinfo.Full("dnscat"))
+			return
 		}
 	}
 
@@ -71,6 +75,7 @@ Usage:
   dnscat stop              Pause/Stop DnsCat service cluster
   dnscat status            Check DnsCat cluster running status
   dnscat update            Update & rebuild DnsCat service cluster
+  dnscat version           Print version and exit
   dnscat help              Show this help message
 `)
 }
@@ -81,7 +86,7 @@ func interactiveMenu() {
 	for {
 		fmt.Println()
 		fmt.Println("==================================================================")
-		fmt.Println("  🐱 DnsCat 权威 DNS & 智能 Anycast 集群 CLI 控制台管理工具 v1.0.0 ")
+		fmt.Printf("  🐱 DnsCat 权威 DNS & 智能 Anycast 集群 CLI 控制台管理工具 %s\n", buildinfo.Short())
 		fmt.Println("==================================================================")
 		fmt.Println("  [1] 重置 / 修改管理员登录账号与密码 (无需原密码)")
 		fmt.Println("  [2] 启动 DnsCat 服务集群 (Start)")

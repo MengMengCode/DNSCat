@@ -67,9 +67,11 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		SecretToken:   secretToken,
 		IsOnline:      false,
 		LastHeartbeat: time.Now(),
-		Version:       "v1.0.0",
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		// 版本留空：节点还没上报过心跳，此时填任何值都是猜的。
+		// 早前预填 "v1.0.0"，导致控制台把从未连上的节点显示成某个具体版本。
+		Version:   "",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	if err := database.DB.Create(&node).Error; err != nil {

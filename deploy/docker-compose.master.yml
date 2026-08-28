@@ -58,6 +58,9 @@ services:
       - dnscat_net
 
   server:
+    # 默认拉取 CI 发布的多架构镜像（GHCR），目标机无需编译。
+    # 同时保留 build 段：加 --build 就地构建，用于改了源码想验证的场合。
+    image: ${DNSCAT_SERVER_IMAGE:-ghcr.io/mengmengcode/dnscat-server:latest}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.server

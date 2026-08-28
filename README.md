@@ -124,17 +124,12 @@ Useful options:
 
 Downloaded binaries are verified against the release's `SHA256SUMS.txt` before installation. A mismatch aborts the install.
 
-### Cutting a release (maintainers)
-
-`.github/workflows/release.yml` builds twelve binaries on tag push — `linux/{amd64,386,arm64,armv7}` × server/node/CLI — and attaches them to the GitHub Release along with `SHA256SUMS.txt`. `scripts/release.sh` drives it:
+Every binary reports its own version:
 
 ```bash
-scripts/release.sh v1.0.0 --dry-run   # run every check, change nothing
-scripts/release.sh v1.0.0             # tag, push, watch the run, verify the assets
-scripts/release.sh --verify v1.0.0    # re-check an existing release's assets
+dnscat-server --version   # dnscat-server v0.1.0 (abc1234, 2026-08-26T00:00:00Z, go1.25.0, linux/amd64)
+dnscat version
 ```
-
-It refuses to tag a dirty tree or a HEAD that differs from the remote, then cross-checks that every asset name the installer builds its download URL from actually exists — a missing asset silently degrades the one-click install into a from-source build.
 
 About port 53: in binary mode the installer detects what already holds the port and steps aside where it can do so safely. `systemd-resolved` is handled by disabling its stub listener, which leaves the host's own name resolution intact. Occupants it cannot resolve safely abort the install with guidance. Docker mode never modifies host services — it aborts on conflict and prints the steps for you.
 
@@ -145,6 +140,15 @@ The installer handles the Docker path end to end as well — it fetches a source
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --mode docker --role master
 ```
+
+Images are published to GHCR for `linux/amd64` and `linux/arm64`, so the installer pulls instead of building. `armv7` is binary-install only — the Alpine base used here has no armv7 Node image for the frontend build stage.
+
+```
+ghcr.io/mengmengcode/dnscat-server
+ghcr.io/mengmengcode/dnscat-node
+```
+
+Add `--from-source` to build the images on the target machine instead of pulling.
 
 To run Compose directly, prepare `deploy/.env` first — the three secrets have no defaults, so Compose fails fast rather than silently using weak values:
 

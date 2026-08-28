@@ -15,8 +15,16 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 ARG TARGETOS=linux
 ARG TARGETARCH
+# 版本信息由 CI 通过 build-arg 传入；本地 docker build 不传时二进制自报 dev。
+ARG VERSION=""
+ARG COMMIT=""
+ARG BUILD_DATE=""
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags "-s -w" -o /out/node ./cmd/node
+    go build -trimpath -ldflags "-s -w \
+      -X dnscat/internal/buildinfo.Version=${VERSION} \
+      -X dnscat/internal/buildinfo.Commit=${COMMIT} \
+      -X dnscat/internal/buildinfo.Date=${BUILD_DATE}" \
+      -o /out/node ./cmd/node
 
 # ---------- 2) 运行期 ----------
 FROM alpine:3.20

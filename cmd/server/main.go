@@ -15,6 +15,7 @@ import (
 
 	"dnscat/internal/acme"
 	"dnscat/internal/api"
+	"dnscat/internal/buildinfo"
 	"dnscat/internal/cache"
 	"dnscat/internal/cluster"
 	"dnscat/internal/config"
@@ -98,10 +99,18 @@ func loadLogRetentionLimits() map[uint]int {
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "Path to config.yaml")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
+	// --version 要能在没有配置文件、没有数据库的机器上直接跑通，
+	// 所以放在加载配置之前返回。
+	if *showVersion {
+		fmt.Println(buildinfo.Full("dnscat-server"))
+		return
+	}
+
 	log.Printf("==================================================")
-	log.Printf("  DnsCat Authoritative DNS Master Server v1.0.0   ")
+	log.Printf("  DnsCat Authoritative DNS Master Server %s", buildinfo.Short())
 	log.Printf("==================================================")
 
 	// 1. Load Config
@@ -421,7 +430,7 @@ func main() {
 	go func() {
 		fmt.Println()
 		fmt.Println("================================================================================")
-		fmt.Println("  🐱 DnsCat Enterprise Authoritative DNS & Smart Anycast Engine v1.0.0          ")
+		fmt.Printf("  🐱 DnsCat Enterprise Authoritative DNS & Smart Anycast Engine %s\n", buildinfo.Short())
 		fmt.Println("================================================================================")
 		fmt.Printf("  [Web 控制台地址]  : http://%s\n", httpAddr)
 		fmt.Printf("  [DNS 端口服务]    : :%d (UDP/TCP)\n", cfg.DNS.UDPPort)

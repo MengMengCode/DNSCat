@@ -123,17 +123,12 @@ curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/i
 
 下载的二进制会与 Release 里的 `SHA256SUMS.txt` 逐个核对，不匹配即中止安装。
 
-### 发布新版本（维护者）
-
-`.github/workflows/release.yml` 在推送 tag 时构建 12 个二进制——`linux/{amd64,386,arm64,armv7}` × server/node/CLI——连同 `SHA256SUMS.txt` 一起挂到 GitHub Release。用 `scripts/release.sh` 驱动：
+每个二进制都能自报版本：
 
 ```bash
-scripts/release.sh v1.0.0 --dry-run   # 只跑检查，不做任何改动
-scripts/release.sh v1.0.0             # 打 tag、推送、跟踪运行、核对产物
-scripts/release.sh --verify v1.0.0    # 重新核对已有 Release 的产物
+dnscat-server --version   # dnscat-server v0.1.0 (abc1234, 2026-08-26T00:00:00Z, go1.25.0, linux/amd64)
+dnscat version
 ```
-
-工作区不干净或 HEAD 与远端不一致时会拒绝打 tag；发布后逐项核对安装脚本拼下载地址所用的每个资产名是否真的存在——少一个就会让一键安装静默退化成源码编译。
 
 关于 53 端口：二进制模式会自动识别占用者并在可安全处理时让开。`systemd-resolved` 采用关闭 stub 监听的方式处理，宿主机自身的域名解析不受影响；无法安全处理的占用者会中止安装并给出处置建议。Docker 模式不改动宿主服务，检测到占用即中止并打印处置步骤。
 
@@ -144,6 +139,15 @@ Docker 这条路同样由安装脚本一手完成——独立运行时它会自�
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MengMengCode/DNSCat/master/deploy/install.sh | sudo bash -s -- --yes --mode docker --role master
 ```
+
+镜像已发布到 GHCR，覆盖 `linux/amd64` 与 `linux/arm64`，安装脚本默认直接拉取而不在目标机上编译。`armv7` 只支持二进制安装——这里用的 Alpine 基础镜像没有 armv7 的 Node 变体，前端构建阶段跑不起来。
+
+```
+ghcr.io/mengmengcode/dnscat-server
+ghcr.io/mengmengcode/dnscat-node
+```
+
+加 `--from-source` 可改为在目标机上就地构建镜像。
 
 若要直接用 Compose，需先准备 `deploy/.env`。三个密钥都没有默认值，未设置时 Compose 会直接报错退出，不会静默使用弱口令：
 

@@ -70,6 +70,25 @@ jobs:
           cp -r web/dist internal/webui/dist
           test -f internal/webui/dist/index.html
 
+      # 版本号取自 tag；手动触发未给 tag 时记为 dev-<短提交号>。
+      # 走 ldflags 而不是把版本写进源码：写进源码就得在打 tag 前多提交一次改版本号，
+      # 而那个提交本身不在 tag 里，容易出现二进制自报版本与 tag 不一致。
+      - name: Resolve version
+        id: ver
+        run: |
+          set -eu
+          TAG='${{ inputs.tag }}'
+          if [ -z "${TAG}" ] && [ "${GITHUB_REF_TYPE}" = 'tag' ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if [ -z "${TAG}" ]; then
+            TAG="dev-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "Building version: ${TAG}"
+
       - name: Build binaries
         env:
           CGO_ENABLED: '0'
@@ -80,14 +99,29 @@ jobs:
           set -eux
           mkdir -p dist
           A='${{ matrix.arch }}'
-          go build -tags embedui -trimpath -ldflags "-s -w" \
+          LDFLAGS="-s -w \
+            -X dnscat/internal/buildinfo.Version=${{ steps.ver.outputs.version }} \
+            -X dnscat/internal/buildinfo.Commit=${{ steps.ver.outputs.commit }} \
+            -X dnscat/internal/buildinfo.Date=${{ steps.ver.outputs.date }}"
+          go build -tags embedui -trimpath -ldflags "${LDFLAGS}" \
             -o "dist/dnscat-server_linux_${A}" ./cmd/server
-          go build -trimpath -ldflags "-s -w" \
+          go build -trimpath -ldflags "${LDFLAGS}" \
             -o "dist/dnscat-node_linux_${A}" ./cmd/node
-          go build -trimpath -ldflags "-s -w" \
+          go build -trimpath -ldflags "${LDFLAGS}" \
             -o "dist/dnscat_linux_${A}" ./cmd/cli
           ls -l dist/
           file dist/* || true
+
+      # amd64 产物能在 runner 上直接执行，顺手验一下版本号真的注入进去了。
+      # 交叉编译的其他架构跑不动，只能靠 file 看架构对不对。
+      - name: Verify injected version
+        if: matrix.arch == 'amd64'
+        run: |
+          set -eux
+          ./dist/dnscat-server_linux_amd64 --version
+          ./dist/dnscat-node_linux_amd64 --version
+          ./dist/dnscat_linux_amd64 version
+          ./dist/dnscat-server_linux_amd64 --version | grep -qF '${{ steps.ver.outputs.version }}'
 
       - name: Checksums
         run: |

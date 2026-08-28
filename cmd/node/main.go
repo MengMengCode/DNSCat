@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"dnscat/internal/buildinfo"
 	"dnscat/internal/cluster"
 	"dnscat/internal/config"
 	"dnscat/internal/dnsengine"
@@ -30,7 +31,14 @@ func main() {
 	// 对外服务地址：与主控同机（走容器网络回连）或位于 NAT 之后时，
 	// 主控看到的源地址是内网地址，需由节点自己声明真实的公网地址。
 	publicIP := flag.String("public-ip", "", "Public IP this node serves DNS on (reported to master; optional)")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	// --version 先于令牌校验返回：否则想查个版本号都得先备好集群令牌。
+	if *showVersion {
+		fmt.Println(buildinfo.Full("dnscat-node"))
+		return
+	}
 
 	// 令牌优先从环境变量读取。命令行传参会出现在 ps 输出里，同机任何本地用户都能看到，
 	// 而 systemd 的 EnvironmentFile 可以设成 0640，只有服务账号可读。
@@ -47,7 +55,7 @@ func main() {
 	}
 
 	log.Printf("==================================================")
-	log.Printf("  DnsCat Edge Node Daemon (%s)", *nodeID)
+	log.Printf("  DnsCat Edge Node Daemon %s (%s)", buildinfo.Short(), *nodeID)
 	log.Printf("  Master: %s", *masterURL)
 	log.Printf("  DNS Listeners: UDP:%d, TCP:%d", *udpPort, *tcpPort)
 	if *publicIP != "" {
@@ -160,8 +168,10 @@ func sendHeartbeat(client *http.Client, masterURL, nodeID, token, publicIP strin
 		QPS:          dnsengine.GlobalTelemetry.GetCurrentQPS(),
 		TotalQueries: int64(totalQ),
 		// 上报本节点自身的 DNS 处理耗时（微秒转毫秒），不再使用固定值。
-		LatencyMs:    dnsengine.GlobalTelemetry.GetAvgLatencyMs(),
-		Version:      "v1.0.0",
+		LatencyMs: dnsengine.GlobalTelemetry.GetAvgLatencyMs(),
+		// 上报编译期注入的真实版本，控制台据此发现版本不一致的节点。
+		// 早前这里是硬编码的 "v1.0.0"，升级过的节点也照报旧值。
+		Version:      buildinfo.Short(),
 		GlobalCounts: &globalCounts,
 		GeoCounts:    globalCounts.Countries,
 		DomainCounts: dnsengine.GlobalTelemetry.GetDomainCounts(),
